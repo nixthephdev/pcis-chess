@@ -1,0 +1,14 @@
+{
+  "name": "Chess Quest",
+  "short_name": "Chess Quest",
+  "description": "Learn chess by playing: collect stars, capture pieces and checkmate the king.",
+  "start_url": "/quest",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#dff3ea",
+  "theme_color": "#1c2541",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

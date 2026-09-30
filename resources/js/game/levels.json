@@ -1,0 +1,86 @@
+{
+  "sections": [
+    { "title": "Meet the pieces", "subtitle": "How each piece moves", "color": "sun" },
+    { "title": "Battle skills", "subtitle": "Capture and stay safe", "color": "tang" },
+    { "title": "Attack the king", "subtitle": "Check and checkmate", "color": "berry" }
+  ],
+  "worlds": [
+    {
+      "id": "rook", "section": 0, "name": "The Rook", "piece": "r", "blurb": "Moves in straight lines",
+      "levels": [
+        { "goal": "stars", "board": { "7": "....*...", "1": "....R..." }, "tip": "Tap the rook, then tap the star. Rooks slide in straight lines: up, down, left and right!" },
+        { "goal": "stars", "board": { "6": "..*.....", "1": ".R....*." }, "tip": "Two stars! Can you grab both in just a few moves?" },
+        { "goal": "stars", "board": { "8": "*......*", "4": "...R....", "1": "*......*" }, "tip": "Four corners! Plan your route before you move." },
+        { "goal": "stars", "board": { "7": ".*...p..", "4": "...*....", "1": "R......*" }, "tip": "Black pieces guard squares. Never land where the pawn can capture you! Pawns capture one step diagonally." },
+        { "goal": "stars", "board": { "8": "..*..n..", "5": "*..R...*", "2": "..b....." }, "tip": "A knight AND a bishop are on guard. Tap Hint to see the danger squares." }
+      ]
+    },
+    {
+      "id": "bishop", "section": 0, "name": "The Bishop", "piece": "b", "blurb": "Moves diagonally",
+      "levels": [
+        { "goal": "stars", "board": { "5": "......*.", "1": "..B....." }, "tip": "Bishops slide diagonally, like the lines of an X." },
+        { "goal": "stars", "board": { "3": "*...*...", "1": "..B....." }, "tip": "Two stars. Zig and zag!" },
+        { "goal": "stars", "board": { "8": "...*....", "6": ".*.....*", "3": "*.......", "1": "..B....." }, "tip": "Secret: a bishop stays on the SAME colour square forever!" },
+        { "goal": "stars", "board": { "8": "..*.*...", "6": "*.......", "3": "......n*", "1": ".....B.." }, "tip": "Knights jump in an L shape. Stay away from the squares it guards!" }
+      ]
+    },
+    {
+      "id": "queen", "section": 0, "name": "The Queen", "piece": "q", "blurb": "Rook + bishop together",
+      "levels": [
+        { "goal": "stars", "board": { "8": "...*....", "5": ".......*", "4": "*.......", "1": "...Q...." }, "tip": "The queen is the strongest piece. She moves like a rook AND a bishop!" },
+        { "goal": "stars", "board": { "8": "*......*", "6": "..b.....", "5": "....*...", "1": "Q......*" }, "tip": "A star is guarded? Capture the guard first!" }
+      ]
+    },
+    {
+      "id": "king", "section": 0, "name": "The King", "piece": "k", "blurb": "The most important piece",
+      "levels": [
+        { "goal": "stars", "board": { "4": ".....*..", "3": "....*...", "1": "....K..." }, "tip": "The king moves just ONE step, in any direction." },
+        { "goal": "stars", "board": { "5": "..*...*.", "3": "....*...", "1": "....K..." }, "tip": "Step by step. Which star should the king visit first?" },
+        { "goal": "stars", "board": { "7": "....*...", "6": ".......r", "5": ".*...*..", "4": "...K....", "2": "..*....." }, "tip": "CHALLENGE! The rook guards its whole row and column. Kings can capture too, if the square is safe!" }
+      ]
+    },
+    {
+      "id": "knight", "section": 0, "name": "The Knight", "piece": "n", "blurb": "Jumps in an L shape",
+      "levels": [
+        { "goal": "stars", "board": { "5": "...*....", "3": "..*.....", "1": ".N......" }, "tip": "Knights jump in an L: two squares one way, then one to the side. They can jump over pieces!" },
+        { "goal": "stars", "board": { "7": "..*.....", "6": "....*...", "5": "......*.", "3": ".......*", "1": "......N." }, "tip": "Hop, hop, hop! Follow the stars." },
+        { "goal": "stars", "board": { "6": "..p.....", "5": "...*....", "4": "...N*..." }, "tip": "Stars right next to a knight are the trickiest to reach. Think in L shapes!" }
+      ]
+    },
+    {
+      "id": "pawn", "section": 0, "name": "The Pawn", "piece": "p", "blurb": "Moves forward only",
+      "levels": [
+        { "goal": "stars", "board": { "4": "....*...", "2": "....P..." }, "tip": "Pawns only move forward. On their very first move they may take 2 steps!" },
+        { "goal": "stars", "board": { "7": ".....*..", "6": ".....*..", "5": ".....r..", "4": "....*...", "3": "....n...", "2": "...P...." }, "tip": "Pawns move straight but capture diagonally, one step forward." },
+        { "goal": "stars", "board": { "8": ".*.....*", "6": ".P......" }, "tip": "Reach the last row and your pawn becomes a QUEEN! That is called promotion." }
+      ]
+    },
+    {
+      "id": "capture", "section": 1, "name": "Capture!", "piece": "r", "blurb": "Take the enemy pieces",
+      "levels": [
+        { "goal": "capture", "board": { "6": "n....b..", "1": "R......." }, "tip": "Capture ALL the black pieces. Land on a piece to take it!" },
+        { "goal": "capture", "board": { "7": ".p....n.", "4": "...b....", "1": "...Q...." }, "tip": "Some pieces protect each other. Take the one nobody protects first!" },
+        { "goal": "capture", "board": { "7": "..p.....", "6": "...p....", "5": ".....p..", "4": "....N..." }, "tip": "Pawns protect the pawn diagonally in front of them. Be careful, knight!" },
+        { "goal": "capture", "board": { "8": "r.......", "6": "....n...", "3": "..p.....", "1": "R.B....." }, "tip": "Two heroes! Team up the rook and the bishop." }
+      ]
+    },
+    {
+      "id": "check", "section": 2, "name": "Check in one", "piece": "n", "blurb": "Attack the king",
+      "levels": [
+        { "goal": "check", "board": { "8": "....k...", "1": "R...K..." }, "tip": "CHECK means you attack the enemy king. Make one move that attacks the black king!" },
+        { "goal": "check", "board": { "8": "......k.", "7": "......pp", "1": ".....BK." }, "tip": "Find a diagonal that points at the king." },
+        { "goal": "check", "board": { "8": "....k...", "4": "....N...", "1": "....K..." }, "tip": "Knights give sneaky checks. Nothing can block them!" },
+        { "goal": "check", "board": { "8": ".......k", "7": "......pp", "1": "...Q..K." }, "tip": "The queen can check from far away." }
+      ]
+    },
+    {
+      "id": "mate", "section": 2, "name": "Mate in one", "piece": "k", "blurb": "Win the game!",
+      "levels": [
+        { "goal": "mate", "board": { "8": "......k.", "7": ".....ppp", "1": "R.....K." }, "tip": "CHECKMATE means the king is in check and cannot escape. That wins the game! Look at the back row." },
+        { "goal": "mate", "board": { "8": "k.......", "7": ".......Q", "6": ".K......" }, "tip": "Your king can help the queen. Find the mate!" },
+        { "goal": "mate", "board": { "8": ".......k", "7": "R.......", "1": ".R....K." }, "tip": "Two rooks make a ladder. One guards a row, the other gives check." },
+        { "goal": "mate", "board": { "8": ".......k", "7": "......pp", "4": "......Q.", "2": ".B......", "1": "......K." }, "tip": "The bishop is aiming at a square next to the king. Use it!" }
+      ]
+    }
+  ]
+}
