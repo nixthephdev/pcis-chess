@@ -18,7 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->redirectGuestsTo(
-            fn (Request $request) => $request->is('quest*') ? route('join') : route('login')
+            fn (Request $request) => match (true) {
+                $request->is('quest*') => route('join'),
+                $request->is('account*') => route('player.login'),
+                default => route('login'),
+            }
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {

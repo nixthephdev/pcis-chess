@@ -23,9 +23,18 @@ defineProps<{ canRegister: boolean }>();
                     <span class="grid h-20 w-20 place-items-center rounded-full border-[3px] border-ink bg-sun p-2">
                         <PieceIcon piece="N" />
                     </span>
-                    <h2 class="font-display text-3xl font-extrabold">I'm a student</h2>
-                    <Link :href="route('join')" class="btn btn-go w-full text-xl">Join my class</Link>
-                    <Link :href="route('quest')" class="font-bold text-ink-soft underline underline-offset-4">Play as a guest</Link>
+                    <h2 class="font-display text-3xl font-extrabold">I'm a player</h2>
+                    <Link v-if="$page.props.auth.student" :href="route('quest')" class="btn btn-go w-full text-xl">
+                        Keep playing, {{ $page.props.auth.student.name }}
+                    </Link>
+                    <template v-else>
+                        <div class="grid w-full grid-cols-2 gap-3">
+                            <Link :href="route('player.register')" class="btn btn-go text-xl">Sign up</Link>
+                            <Link :href="route('player.login')" class="btn text-xl">Sign in</Link>
+                        </div>
+                        <Link :href="route('join')" class="btn w-full text-xl">Join my class</Link>
+                        <Link :href="route('quest')" class="font-bold text-ink-soft underline underline-offset-4">Play as a guest</Link>
+                    </template>
                 </section>
 
                 <section class="chunky flex flex-col items-center gap-4 p-6">
@@ -42,6 +51,8 @@ defineProps<{ canRegister: boolean }>();
                     </template>
                 </section>
             </div>
+
+            <Link :href="route('club')" class="btn btn-go text-xl">♟️ Chess Club: puzzles, lessons & register</Link>
 
             <footer class="text-xs font-bold text-ink-soft">
                 Chess piece artwork by Cburnett,

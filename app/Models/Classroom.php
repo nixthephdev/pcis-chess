@@ -36,8 +36,12 @@ class Classroom extends Model
         return $code;
     }
 
-    /** @return list<array{id: int, name: string, avatar: string, stars: int}> best first */
-    public static function leaderboard(int $classroomId): array
+    /**
+     * A null classroom ranks the players who signed up on their own.
+     *
+     * @return list<array{id: int, name: string, avatar: string, stars: int}> best first
+     */
+    public static function leaderboard(?int $classroomId): array
     {
         return Student::where('classroom_id', $classroomId)
             ->withSum('progress', 'stars')

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ClassroomController;
 use App\Http\Controllers\JoinController;
+use App\Http\Controllers\PlayerController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QuestController;
 use Illuminate\Support\Facades\Route;
@@ -13,12 +14,29 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
+// School chess club: puzzles, lessons, register and leaderboard by grade tier
+Route::get('/club', fn () => Inertia::render('Club'))->name('club');
+
 // Students
 Route::get('/join', [JoinController::class, 'code'])->name('join');
 Route::post('/join', [JoinController::class, 'lookup'])->name('join.lookup');
 Route::get('/join/{code}', [JoinController::class, 'pick'])->name('join.class');
 Route::post('/join/{code}', [JoinController::class, 'login'])->name('join.login');
 Route::post('/student/logout', [JoinController::class, 'logout'])->name('student.logout');
+
+// Players with their own account
+Route::get('/signup', [PlayerController::class, 'create'])->name('player.register');
+Route::post('/signup', [PlayerController::class, 'store'])->middleware('throttle:10,1');
+Route::get('/signin', [PlayerController::class, 'signIn'])->name('player.login');
+Route::post('/signin', [PlayerController::class, 'authenticate']);
+Route::get('/@/{username}', [PlayerController::class, 'show'])->name('player.show');
+
+Route::middleware('auth:student')->group(function () {
+    Route::get('/account', [PlayerController::class, 'edit'])->name('player.edit');
+    Route::patch('/account', [PlayerController::class, 'update'])->name('player.update');
+    Route::put('/account/password', [PlayerController::class, 'updatePassword'])->name('player.password');
+    Route::delete('/account', [PlayerController::class, 'destroy'])->name('player.destroy');
+});
 
 // Guests can play too; their stars stay on the device.
 Route::get('/quest', [QuestController::class, 'show'])->name('quest');

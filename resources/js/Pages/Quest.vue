@@ -10,7 +10,7 @@ import StarIcon from '@/Components/Game/StarIcon.vue';
 import StudentAvatar from '@/Components/Game/StudentAvatar.vue';
 
 const props = defineProps<{
-    student: { name: string; avatar: string; classroom: string } | null;
+    student: { name: string; avatar: string; username: string | null; classroom: string | null } | null;
     progress: StarMap | null;
     leaderboard: Leaderboard | null;
 }>();
@@ -89,8 +89,17 @@ async function onComplete(level: Level, earned: number, moves: number) {
                     <button type="button" class="btn btn-sm" :aria-pressed="muted" @click="(muted = !muted), sfx.tap()">
                         Sound: {{ muted ? 'off' : 'on' }}
                     </button>
-                    <Link v-if="student" :href="route('student.logout')" method="post" as="button" class="btn btn-sm">Log out</Link>
-                    <Link v-else :href="route('join')" class="btn btn-sm btn-go">Join your class</Link>
+                    <template v-if="student">
+                        <template v-if="student.username">
+                            <Link :href="route('player.show', student.username)" class="btn btn-sm">My profile</Link>
+                            <Link :href="route('player.edit')" class="btn btn-sm">Settings</Link>
+                        </template>
+                        <Link :href="route('student.logout')" method="post" as="button" class="btn btn-sm">Log out</Link>
+                    </template>
+                    <template v-else>
+                        <Link :href="route('player.login')" class="btn btn-sm">Sign in</Link>
+                        <Link :href="route('player.register')" class="btn btn-sm btn-go">Sign up</Link>
+                    </template>
                 </div>
             </header>
 
@@ -102,7 +111,7 @@ async function onComplete(level: Level, earned: number, moves: number) {
                 <div class="flex items-center gap-4">
                     <StudentAvatar :avatar="student?.avatar ?? 'pawn'" :size="64" />
                     <div class="min-w-0">
-                        <p class="label-caps">{{ student ? student.classroom : 'Playing as a guest' }}</p>
+                        <p class="label-caps">{{ student ? (student.classroom ?? 'Your account') : 'Playing as a guest' }}</p>
                         <h2 class="truncate font-display text-3xl font-extrabold">Hi, {{ student?.name ?? 'Explorer' }}!</h2>
                         <span class="mt-1 inline-flex items-center gap-2 rounded-full bg-ink py-1 pl-2 pr-4 font-display font-extrabold text-sun">
                             <span class="h-6 w-6"><PieceIcon :piece="rank.piece" /></span>{{ rank.title }}
@@ -119,7 +128,9 @@ async function onComplete(level: Level, earned: number, moves: number) {
                     <div class="progress-fill h-full" :style="{ width: (total / TOTAL_STARS) * 100 + '%' }" />
                 </div>
                 <p v-if="!student" class="text-sm font-bold text-ink-soft sm:col-span-2">
-                    Guest stars are saved on this device only. Join your class to save them to your account and appear on the leaderboard.
+                    Guest stars are saved on this device only.
+                    <Link :href="route('player.register')" class="underline underline-offset-2">Create an account</Link> to keep them
+                    (they come with you), or <Link :href="route('join')" class="underline underline-offset-2">join your class</Link>.
                 </p>
             </section>
 
@@ -158,9 +169,11 @@ async function onComplete(level: Level, earned: number, moves: number) {
                 </div>
 
                 <aside class="chunky p-5 lg:sticky lg:top-4">
-                    <h2 class="font-display text-2xl font-extrabold">Class leaderboard</h2>
+                    <h2 class="font-display text-2xl font-extrabold">{{ student && !student.classroom ? 'Top players' : 'Class leaderboard' }}</h2>
                     <template v-if="board">
-                        <p v-if="board.me" class="mb-3 text-sm font-bold text-ink-soft">You are number {{ board.me }} in your class.</p>
+                        <p v-if="board.me" class="mb-3 text-sm font-bold text-ink-soft">
+                            You are number {{ board.me }} {{ student?.classroom ? 'in your class' : 'of all players' }}.
+                        </p>
                         <ol class="flex flex-col gap-2">
                             <li
                                 v-for="(row, i) in board.rows"
@@ -176,7 +189,7 @@ async function onComplete(level: Level, earned: number, moves: number) {
                         </ol>
                     </template>
                     <p v-else class="mt-2 font-bold text-ink-soft">
-                        Join your class with the code from your coach to see how your stars compare with your classmates.
+                        Sign up, or join your class with the code from your coach, to see how your stars compare with other players.
                     </p>
                 </aside>
             </div>

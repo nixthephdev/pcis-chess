@@ -10,6 +10,7 @@ export type PageProps<
 > = T & {
     auth: {
         user: User;
+        student: { name: string; username: string | null } | null;
     };
     flash: {
         status: string | null;

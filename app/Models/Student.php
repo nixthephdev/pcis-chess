@@ -10,17 +10,24 @@ class Student extends Authenticatable
 {
     public const AVATARS = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
 
-    protected $fillable = ['name', 'avatar', 'pin', 'last_played_at'];
+    protected $fillable = ['name', 'username', 'avatar', 'pin', 'password', 'last_played_at'];
 
-    protected $hidden = ['pin', 'remember_token'];
+    protected $hidden = ['pin', 'password', 'remember_token'];
 
     protected function casts(): array
     {
         return [
             // Encrypted rather than hashed so the teacher can print login cards.
             'pin' => 'encrypted',
+            'password' => 'hashed',
             'last_played_at' => 'datetime',
         ];
+    }
+
+    /** Signed up on their own, rather than added to a class by a coach. */
+    public function isPlayer(): bool
+    {
+        return $this->username !== null;
     }
 
     public function classroom(): BelongsTo
@@ -35,12 +42,12 @@ class Student extends Authenticatable
 
     public function getAuthPassword(): string
     {
-        return '';
+        return (string) $this->password;
     }
 
     public function pinMatches(string $pin): bool
     {
-        return hash_equals((string) $this->pin, $pin);
+        return $this->pin !== null && hash_equals((string) $this->pin, $pin);
     }
 
     public static function newPin(): string

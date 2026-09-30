@@ -23,7 +23,8 @@ class QuestController extends Controller
             'student' => $student ? [
                 'name' => $student->name,
                 'avatar' => $student->avatar,
-                'classroom' => $student->classroom->name,
+                'username' => $student->username,
+                'classroom' => $student->classroom?->name,
             ] : null,
             'progress' => $student?->starsByLevel(),
             'leaderboard' => $student ? $this->leaderboard($student) : null,
@@ -40,6 +41,7 @@ class QuestController extends Controller
             'stars' => ['required', 'integer', 'between:1,3'],
             'moves' => ['nullable', 'integer', 'between:0,999'],
         ]);
+        $data['moves'] ??= null;
 
         $row = $student->progress()->firstOrNew(['level_id' => $data['level_id']]);
         if ($row->exists) {
