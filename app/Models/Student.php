@@ -10,7 +10,7 @@ class Student extends Authenticatable
 {
     public const AVATARS = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
 
-    protected $fillable = ['name', 'username', 'avatar', 'pin', 'password', 'last_played_at'];
+    protected $fillable = ['name', 'username', 'avatar', 'grade', 'registered', 'pin', 'password', 'last_played_at'];
 
     protected $hidden = ['pin', 'password', 'remember_token'];
 
@@ -20,6 +20,7 @@ class Student extends Authenticatable
             // Encrypted rather than hashed so the teacher can print login cards.
             'pin' => 'encrypted',
             'password' => 'hashed',
+            'registered' => 'boolean',
             'last_played_at' => 'datetime',
         ];
     }
@@ -38,6 +39,16 @@ class Student extends Authenticatable
     public function progress(): HasMany
     {
         return $this->hasMany(LevelProgress::class);
+    }
+
+    public function attendance(): HasMany
+    {
+        return $this->hasMany(ClubAttendance::class);
+    }
+
+    public function clubProgress(): HasMany
+    {
+        return $this->hasMany(ClubProgress::class);
     }
 
     public function getAuthPassword(): string

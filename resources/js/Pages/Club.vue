@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import axios from 'axios';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
     Activity,
     BookOpen,
@@ -47,6 +48,43 @@ import { confetti } from '@/game/confetti';
 import { sfx } from '@/game/sound';
 import PieceIcon from '@/Components/Game/PieceIcon.vue';
 import StarIcon from '@/Components/Game/StarIcon.vue';
+import type { PageProps } from '@/types';
+
+type Mark = 'P' | 'L' | 'A';
+interface Summary {
+    xp: number;
+    solved: Record<string, { firstTry: boolean }>;
+    lessons: string[];
+    weekly: { puzzles: number; lessons: number; xp: number };
+}
+interface RosterMember {
+    id: number;
+    name: string;
+    grade: Grade | null;
+    registered: boolean;
+    attendance: Record<string, Mark>;
+}
+interface BoardRow {
+    id: number;
+    name: string;
+    grade: Grade | null;
+    xp: number;
+    streak: number;
+    sessions: number;
+    me: boolean;
+}
+
+const props = defineProps<{
+    /** The last four club weeks (Mondays, "Y-m-d"), oldest first; the last one is this week. */
+    weeks: string[];
+    /** The signed-in student or player, whose puzzle and lesson XP is saved to their account. */
+    me: { name: string; grade: Grade | null; classroom: string | null } | null;
+    myProgress: Summary | null;
+    /** Only for a signed-in coach. */
+    roster: { classrooms: { id: number; name: string }[]; classroomId: number | null; members: RosterMember[] } | null;
+    board: { title: string; rows: BoardRow[] } | null;
+}>();
+const page = usePage<PageProps>();
 
 // ------------------------------------------------------------------ storage (this browser only)
 
@@ -69,7 +107,8 @@ function save(key: string, value: unknown) {
 // ------------------------------------------------------------------ grade tier
 
 const saved = load<{ grade: string }>('chessclub.grade', { grade: 'PYP 3' });
-const grade = ref<Grade>((GRADES as readonly string[]).includes(saved.grade) ? (saved.grade as Grade) : 'PYP 3');
+// A student's own grade (set by their coach) wins over what this browser last picked.
+const grade = ref<Grade>(props.me?.grade ?? ((GRADES as readonly string[]).includes(saved.grade) ? (saved.grade as Grade) : 'PYP 3'));
 const tier = computed<Tier>(() => tierOf(grade.value));
 const explorer = computed(() => tier.value === 'explorer');
 watch(grade, (g) => save('chessclub.grade', { grade: g }));
@@ -81,21 +120,15 @@ const TABS = computed(() => [
     { id: 'lessons' as const, icon: BookOpen, label: 'Lessons' },
     { id: 'roster' as const, icon: Users, label: explorer.value ? 'Club Register' : 'Roster & Attendance' },
     { id: 'leaderboard' as const, icon: Trophy, label: explorer.value ? 'Stars & Badges' : 'Leaderboard & XP' },
-]);
+].filter((t) => t.id !== 'roster' || props.roster));
 
-// ------------------------------------------------------------------ weeks
+// ------------------------------------------------------------------ weeks (from the server, so every coach sees the same week)
 
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-function mondayOf(d: Date, weeksBack = 0) {
-    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    x.setDate(x.getDate() - ((x.getDay() + 6) % 7) - 7 * weeksBack);
-    return x;
-}
-const THIS_WEEK = ymd(mondayOf(new Date()));
-const WEEKS = [3, 2, 1, 0].map((n) => {
-    const d = mondayOf(new Date(), n);
-    return { key: ymd(d), label: n === 0 ? 'This week' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) };
-});
+const THIS_WEEK = props.weeks[props.weeks.length - 1];
+const WEEKS = props.weeks.map((key) => ({
+    key,
+    label: key === THIS_WEEK ? 'This week' : new Date(key + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+}));
 
 // ------------------------------------------------------------------ your progress, XP and badges
 
@@ -105,8 +138,10 @@ interface Progress {
     lessons: string[];
     weekly: Record<string, { puzzles: number; lessons: number; xp: number }>;
 }
-const progress = reactive<Progress>(load('chessclub.progress.v1', { xp: 0, solved: {}, lessons: [], weekly: {} }));
-watch(progress, (p) => save('chessclub.progress.v1', p), { deep: true });
+const fromServer = (s: Summary): Progress => ({ xp: s.xp, solved: { ...s.solved }, lessons: [...s.lessons], weekly: { [THIS_WEEK]: { ...s.weekly } } });
+// Signed in: progress lives on the account. Guests keep it in this browser.
+const progress = reactive<Progress>(props.myProgress ? fromServer(props.myProgress) : load('chessclub.progress.v1', { xp: 0, solved: {}, lessons: [], weekly: {} }));
+watch(progress, (p) => props.me || save('chessclub.progress.v1', p), { deep: true });
 
 const week = computed(() => progress.weekly[THIS_WEEK] ?? { puzzles: 0, lessons: 0, xp: 0 });
 const level = computed(() => Math.floor(progress.xp / 100) + 1);
@@ -191,13 +226,44 @@ function toast(text: string) {
     later(() => (toasts.value = toasts.value.filter((t) => t.id !== id)), 3200);
 }
 
-function award(xp: number, kind: 'puzzles' | 'lessons') {
+/**
+ * Records a finished puzzle or lesson and returns the XP earned. XP only comes the first time
+ * (plus a top-up for a later first-try solve), the same rule ClubController applies.
+ */
+function record(kind: 'puzzle' | 'lesson', id: string, firstTry: boolean): number {
     const before = earnedIds();
     const w = (progress.weekly[THIS_WEEK] ??= { puzzles: 0, lessons: 0, xp: 0 });
+    let xp = 0;
+    if (kind === 'lesson') {
+        if (!progress.lessons.includes(id)) {
+            progress.lessons.push(id);
+            xp = 50;
+            w.lessons++;
+        }
+    } else {
+        const prev = progress.solved[id];
+        if (!prev) {
+            xp = firstTry ? 30 : 15;
+            w.puzzles++;
+        } else if (firstTry && !prev.firstTry) {
+            xp = 15;
+        }
+        progress.solved[id] = { firstTry: firstTry || !!prev?.firstTry };
+    }
     progress.xp += xp;
     w.xp += xp;
-    w[kind]++;
     for (const b of BADGES) if (!before.includes(b.id) && b.test()) toast(`Badge unlocked: ${b.name}!`);
+
+    if (props.me && xp) {
+        axios
+            .post<Summary>(route('club.progress'), { kind, id, first_try: firstTry })
+            .then(({ data }) => {
+                Object.assign(progress, fromServer(data));
+                router.reload({ only: ['board'] });
+            })
+            .catch(() => toast("Couldn't save to your account. Check your connection and try again."));
+    }
+    return xp;
 }
 
 // ------------------------------------------------------------------ timers
@@ -335,11 +401,7 @@ function puzzleMove(from: number, to: number) {
 
 function solvePuzzle() {
     const p = puzzle.value;
-    const firstTry = pz.wrong === 0;
-    const prev = progress.solved[p.id];
-    const xp = !prev ? (firstTry ? 30 : 15) : 5;
-    progress.solved[p.id] = { firstTry: firstTry || !!prev?.firstTry };
-    award(xp, 'puzzles');
+    const xp = record('puzzle', p.id, pz.wrong === 0);
 
     pz.solved = true;
     pz.locked = true;
@@ -389,6 +451,7 @@ const ls = reactive({
     mood: '' as '' | 'good' | 'bad',
     shake: false,
     finished: false,
+    earned: 0,
 });
 const lessonStep = computed(() => lesson.value?.steps[ls.step] ?? null);
 
@@ -399,7 +462,7 @@ function openLesson(l: Lesson) {
 }
 function loadStep(i: number) {
     const s = lesson.value!.steps[i];
-    Object.assign(ls, { step: i, board: fromFen(s.fen), lastMove: null, done: !s.task, locked: false, message: s.task?.prompt ?? '', mood: '', shake: false, finished: false });
+    Object.assign(ls, { step: i, board: fromFen(s.fen), lastMove: null, done: !s.task, locked: false, message: s.task?.prompt ?? '', mood: '', shake: false, finished: false, earned: 0 });
     selected.value = -1;
 }
 watch(tier, () => (lesson.value = null));
@@ -441,10 +504,7 @@ function nextStep() {
     const l = lesson.value!;
     if (ls.step + 1 < l.steps.length) return loadStep(ls.step + 1);
     ls.finished = true;
-    if (!progress.lessons.includes(l.id)) {
-        progress.lessons.push(l.id);
-        award(50, 'lessons');
-    }
+    ls.earned = record('lesson', l.id, true);
     if (explorer.value) confetti();
     sfx.win();
 }
@@ -518,139 +578,111 @@ const evalPct = computed(() => (evalRes.value ? 50 + evalRes.value.score * 5 : 5
 
 // ------------------------------------------------------------------ roster & attendance
 
-type Mark = 'P' | 'L' | 'A';
-interface Member {
-    id: number;
-    name: string;
-    grade: Grade | null;
-    status: 'Registered' | 'Pending';
-    attendance: Record<string, Mark>;
-}
+// A local copy, so marks change the moment they're tapped; it resyncs whenever the server sends the register.
+const members = ref<RosterMember[]>([]);
+watch(
+    () => props.roster?.members,
+    (ms) => (members.value = (ms ?? []).map((m) => ({ ...m, attendance: { ...m.attendance } }))),
+    { immediate: true },
+);
+const classroomId = computed(() => props.roster?.classroomId ?? null);
+const keep = { preserveScroll: true, preserveState: true };
 
-function seedRoster(): Member[] {
-    const rows: [string, Grade | null, boolean][] = [
-        // First name and last initial only: this file is public. Coaches can add full names on the page (kept in their browser).
-        ['Jaden J.', 'MYP 3', true],
-        ['Levi A.', 'PYP 5', true],
-        ['Gabriel D.', 'MYP 3', true],
-        ['Ayesha C.', 'MYP 2', true],
-        ['Sean P.', 'MYP 3', true],
-        ['Shaun M.', 'PYP 3', true],
-        ['Ahmed C.', null, false],
-        ['Maria C.', null, false],
-        ['Zac R.', null, false],
-        ['Asher A.', null, false],
-    ];
-    return rows.map(([name, g, present], i) => ({
-        id: i + 1,
-        name,
-        grade: g,
-        status: present ? 'Registered' : 'Pending',
-        attendance: present ? { [THIS_WEEK]: 'P' } : {},
-    }));
-}
-const club = reactive(load('chessclub.roster.v2', { members: seedRoster() }));
-watch(club, (c) => save('chessclub.roster.v2', c), { deep: true });
-// v1 seeded full names; don't leave them behind in the browser.
-try {
-    localStorage.removeItem('chessclub.roster.v1');
-} catch {
-    /* storage blocked */
+function pickClassroom(id: number) {
+    router.get(route('club'), { classroom: id }, keep);
 }
 
 const rosterQuery = ref('');
 const rosterFilter = ref<'all' | Tier>('all');
 const shownMembers = computed(() => {
     const q = rosterQuery.value.trim().toLowerCase();
-    return club.members
+    return members.value
         .filter((m) => !q || m.name.toLowerCase().includes(q))
-        .filter((m) => rosterFilter.value === 'all' || (m.grade && tierOf(m.grade) === rosterFilter.value))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .filter((m) => rosterFilter.value === 'all' || (m.grade && tierOf(m.grade) === rosterFilter.value));
 });
 
 const markLabel = (m?: Mark) => (m === 'P' ? 'present' : m === 'L' ? 'late' : m === 'A' ? 'absent' : 'not marked');
 const NEXT_MARK: Record<string, Mark | undefined> = { '': 'P', P: 'L', L: 'A', A: undefined };
-function cycleMark(m: Member, week: string) {
+function cycleMark(m: RosterMember, week: string) {
     const next = NEXT_MARK[m.attendance[week] ?? ''];
     if (next) m.attendance[week] = next;
     else delete m.attendance[week];
+    router.post(route('club.attendance', m.id), { week, mark: next ?? null }, { ...keep, onError: () => toast("Couldn't save that mark.") });
+}
+
+function setGrade(m: RosterMember, g: Grade | null) {
+    m.grade = g;
+    router.patch(route('club.students.update', m.id), { grade: g }, keep);
+}
+function toggleRegistered(m: RosterMember) {
+    m.registered = !m.registered;
+    router.patch(route('club.students.update', m.id), { registered: m.registered }, keep);
 }
 
 const newMember = reactive({ name: '', grade: grade.value as Grade });
+const adding = ref(false);
 function addMember() {
     const name = newMember.name.trim().replace(/\s+/g, ' ');
-    if (!name) return;
-    club.members.push({ id: Math.max(0, ...club.members.map((m) => m.id)) + 1, name, grade: newMember.grade, status: 'Pending', attendance: {} });
-    newMember.name = '';
-    toast(`Added ${name}.`);
+    if (!name || !classroomId.value) return;
+    adding.value = true;
+    router.post(route('classrooms.students.store', classroomId.value), { names: name, grade: newMember.grade }, {
+        ...keep,
+        onSuccess: () => {
+            newMember.name = '';
+            if (page.props.flash.status) toast(page.props.flash.status);
+        },
+        onError: (errors) => toast(errors.names ?? "Couldn't add that student."),
+        onFinish: () => (adding.value = false),
+    });
 }
 
 const armed = ref<number | null>(null);
-function removeMember(m: Member) {
+function removeMember(m: RosterMember) {
     if (armed.value !== m.id) {
         armed.value = m.id;
         later(() => armed.value === m.id && (armed.value = null), 4000);
         return;
     }
-    club.members = club.members.filter((x) => x.id !== m.id);
     armed.value = null;
+    router.delete(route('classrooms.students.destroy', [classroomId.value!, m.id]), keep);
 }
 
-function rateOf(m: Member) {
+function rateOf(m: RosterMember) {
     const marks = WEEKS.map((w) => m.attendance[w.key]).filter(Boolean);
     return marks.length ? Math.round((marks.filter((x) => x !== 'A').length / marks.length) * 100) : null;
 }
 const rosterStats = computed(() => {
-    const ms = club.members;
+    const ms = members.value;
     const marked = ms.flatMap((m) => WEEKS.map((w) => m.attendance[w.key]).filter(Boolean));
     return {
         total: ms.length,
-        registered: ms.filter((m) => m.status === 'Registered').length,
+        registered: ms.filter((m) => m.registered).length,
         presentNow: ms.filter((m) => m.attendance[THIS_WEEK] === 'P' || m.attendance[THIS_WEEK] === 'L').length,
         rate: marked.length ? Math.round((marked.filter((x) => x !== 'A').length / marked.length) * 100) : null,
     };
 });
 
-// ------------------------------------------------------------------ leaderboard
+// ------------------------------------------------------------------ leaderboard (XP and streaks are worked out by the server)
 
-/** Consecutive weeks attended, counting back from this week (or last week if this week is not marked yet). */
-function streakOf(m: Member) {
-    let n = 0;
-    for (let back = m.attendance[THIS_WEEK] ? 0 : 1; back < 52; back++) {
-        const mark = m.attendance[ymd(mondayOf(new Date(), back))];
-        if (mark === 'P' || mark === 'L') n++;
-        else break;
-    }
-    return n;
-}
-function sessionsOf(m: Member) {
-    return Object.values(m.attendance).filter((x) => x !== 'A').length;
-}
 const XP_RULES = { P: 50, L: 30, streak: 20 };
-function memberXp(m: Member) {
-    const a = Object.values(m.attendance);
-    return a.filter((x) => x === 'P').length * XP_RULES.P + a.filter((x) => x === 'L').length * XP_RULES.L + streakOf(m) * XP_RULES.streak;
-}
-function memberBadges(m: Member) {
-    const s = sessionsOf(m);
+function memberBadges(r: BoardRow) {
     return [
-        s >= 1 && { name: 'First Session', icon: CalendarCheck },
-        s >= 3 && { name: 'Regular: 3+ sessions', icon: Star },
-        streakOf(m) >= 3 && { name: 'On Fire: 3-week streak', icon: Flame },
+        r.sessions >= 1 && { name: 'First Session', icon: CalendarCheck },
+        r.sessions >= 3 && { name: 'Regular: 3+ sessions', icon: Star },
+        r.streak >= 3 && { name: 'On Fire: 3-week streak', icon: Flame },
     ].filter(Boolean) as { name: string; icon: typeof Star }[];
 }
 
 const boardFilter = ref<'all' | Tier>('all');
 const ranking = computed(() =>
-    club.members
-        .filter((m) => boardFilter.value === 'all' || (m.grade && tierOf(m.grade) === boardFilter.value))
-        .map((m) => ({ ...m, xp: memberXp(m), streak: streakOf(m), badges: memberBadges(m) }))
-        .sort((a, b) => b.xp - a.xp || a.name.localeCompare(b.name)),
+    (props.board?.rows ?? [])
+        .filter((r) => boardFilter.value === 'all' || (r.grade && tierOf(r.grade) === boardFilter.value))
+        .map((r) => ({ ...r, badges: memberBadges(r) })),
 );
 const byGrade = computed(() =>
     GRADES.map((g) => {
-        const ms = club.members.filter((m) => m.grade === g);
-        return { grade: g, members: ms.length, badges: ms.reduce((n, m) => n + memberBadges(m).length, 0), xp: ms.reduce((n, m) => n + memberXp(m), 0) };
+        const rows = (props.board?.rows ?? []).filter((r) => r.grade === g);
+        return { grade: g, members: rows.length, badges: rows.reduce((n, r) => n + memberBadges(r).length, 0), xp: rows.reduce((n, r) => n + r.xp, 0) };
     }).filter((g) => g.members),
 );
 
@@ -675,7 +707,9 @@ resetPuzzle();
                 </Link>
 
                 <div class="ml-auto flex flex-wrap items-center gap-2">
-                    <span class="chip" :title="`Level ${level}`"><Sparkles :size="16" /> {{ progress.xp }} XP</span>
+                    <span class="chip" :title="`Level ${level}`">
+                        <Sparkles :size="16" /> {{ progress.xp }} XP<template v-if="me"> · {{ me.name }}</template>
+                    </span>
                     <label class="grade-picker">
                         <GraduationCap :size="18" aria-hidden="true" />
                         <span class="sr-only">Grade level</span>
@@ -854,7 +888,8 @@ resetPuzzle();
                         <p v-if="ls.message" class="feedback" :class="ls.mood" aria-live="polite">{{ ls.message }}</p>
 
                         <div v-if="ls.finished" class="feedback good">
-                            {{ explorer ? 'Lesson complete! +50 XP' : 'Lesson complete. +50 XP' }}
+                            {{ explorer ? 'Lesson complete!' : 'Lesson complete.' }}
+                            {{ ls.earned ? `+${ls.earned} XP` : '(Already finished before, so no new XP.)' }}
                         </div>
                         <div class="flex gap-2">
                             <button v-if="ls.step > 0 && !ls.finished" type="button" class="btn-c" @click="loadStep(ls.step - 1)"><ChevronLeft :size="18" /> Back</button>
@@ -869,11 +904,25 @@ resetPuzzle();
 
             <!-- Roster & attendance -->
             <section v-else-if="tab === 'roster'" class="flex flex-col gap-4">
-                <div>
-                    <h1 class="heading">Club Roster & Attendance</h1>
-                    <p class="text-[var(--muted)]">Tap an attendance box to mark it: Present → Late → Absent → blank.</p>
+                <div class="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <h1 class="heading">Club Roster & Attendance</h1>
+                        <p class="text-[var(--muted)]">Tap an attendance box to mark it: Present → Late → Absent → blank. Changes save straight away.</p>
+                    </div>
+                    <label v-if="roster!.classrooms.length > 1" class="flex flex-col gap-1">
+                        <span class="stat-l">Class</span>
+                        <select class="input" :value="classroomId" @change="pickClassroom(Number(($event.target as HTMLSelectElement).value))">
+                            <option v-for="c in roster!.classrooms" :key="c.id" :value="c.id">{{ c.name }}</option>
+                        </select>
+                    </label>
                 </div>
 
+                <div v-if="!roster!.classrooms.length" class="panel flex flex-col items-start gap-3 p-6">
+                    <p class="font-bold">You don't have a class yet. Create one first, then its students show up here.</p>
+                    <Link :href="route('dashboard')" class="btn-c primary">Go to my classes <ChevronRight :size="18" /></Link>
+                </div>
+
+                <template v-else>
                 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     <div class="panel p-4"><div class="stat-n">{{ rosterStats.total }}</div><div class="stat-l">Members</div></div>
                     <div class="panel p-4"><div class="stat-n">{{ rosterStats.registered }}</div><div class="stat-l">Registered</div></div>
@@ -902,7 +951,7 @@ resetPuzzle();
                         <select v-model="newMember.grade" class="input" aria-label="New member's grade">
                             <option v-for="g in GRADES" :key="g" :value="g">{{ g }}</option>
                         </select>
-                        <button type="submit" class="btn-c primary" :disabled="!newMember.name.trim()"><Plus :size="18" /> Add</button>
+                        <button type="submit" class="btn-c primary" :disabled="adding || !newMember.name.trim()"><Plus :size="18" /> Add</button>
                     </form>
                 </div>
 
@@ -922,8 +971,13 @@ resetPuzzle();
                             <tr v-for="m in shownMembers" :key="m.id">
                                 <td class="font-bold">{{ m.name }}</td>
                                 <td>
-                                    <select v-model="m.grade" class="input compact" :aria-label="`${m.name}'s grade`">
-                                        <option :value="null">Not set</option>
+                                    <select
+                                        class="input compact"
+                                        :value="m.grade ?? ''"
+                                        :aria-label="`${m.name}'s grade`"
+                                        @change="setGrade(m, (($event.target as HTMLSelectElement).value || null) as Grade | null)"
+                                    >
+                                        <option value="">Not set</option>
                                         <option v-for="g in GRADES" :key="g" :value="g">{{ g }} · Year {{ yearOf(g) }}</option>
                                     </select>
                                 </td>
@@ -931,11 +985,11 @@ resetPuzzle();
                                     <button
                                         type="button"
                                         class="status"
-                                        :class="m.status === 'Registered' ? 'ok' : 'pending'"
-                                        :aria-label="`${m.name}: ${m.status}. Tap to change.`"
-                                        @click="m.status = m.status === 'Registered' ? 'Pending' : 'Registered'"
+                                        :class="m.registered ? 'ok' : 'pending'"
+                                        :aria-label="`${m.name}: ${m.registered ? 'Registered' : 'Pending'}. Tap to change.`"
+                                        @click="toggleRegistered(m)"
                                     >
-                                        {{ m.status }}
+                                        {{ m.registered ? 'Registered' : 'Pending' }}
                                     </button>
                                 </td>
                                 <td v-for="w in WEEKS" :key="w.key" class="text-center">
@@ -957,19 +1011,33 @@ resetPuzzle();
                                 </td>
                             </tr>
                             <tr v-if="!shownMembers.length">
-                                <td :colspan="WEEKS.length + 5" class="py-6 text-center text-[var(--muted)]">No members match.</td>
+                                <td :colspan="WEEKS.length + 5" class="py-6 text-center text-[var(--muted)]">
+                                    {{ members.length ? 'No members match.' : 'No students in this class yet. Add one above.' }}
+                                </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <p class="text-xs text-[var(--muted)]">The register is saved in this browser only.</p>
+                <p class="text-xs text-[var(--muted)]">
+                    Students added here join your class and get a PIN (see My classes). Removing a student here removes them from the class.
+                </p>
+                </template>
             </section>
 
             <!-- Leaderboard & XP -->
             <section v-else class="grid gap-4 lg:grid-cols-[1fr_380px] lg:items-start">
-                <div class="panel overflow-hidden">
+                <div v-if="!board" class="panel flex flex-col items-start gap-3 p-6">
+                    <h1 class="heading">Club Leaderboard</h1>
+                    <p class="text-[var(--muted)]">Sign in to see your club's leaderboard and save your XP to your account.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <Link :href="route('join')" class="btn-c primary">Join my class</Link>
+                        <Link :href="route('player.login')" class="btn-c">Player sign in</Link>
+                        <Link :href="route('login')" class="btn-c">Coach log in</Link>
+                    </div>
+                </div>
+                <div v-else class="panel overflow-hidden">
                     <div class="flex flex-wrap items-center justify-between gap-3 p-4">
-                        <h1 class="heading">Club Leaderboard</h1>
+                        <h1 class="heading">{{ board.title }}</h1>
                         <div class="seg" role="group" aria-label="Filter by grade band">
                             <button v-for="f in (['all', 'explorer', 'grandmaster'] as const)" :key="f" type="button" :class="{ on: boardFilter === f }" :aria-pressed="boardFilter === f" @click="boardFilter = f">
                                 {{ f === 'all' ? 'All' : f === 'explorer' ? 'PYP' : 'MYP' }}
@@ -977,7 +1045,7 @@ resetPuzzle();
                         </div>
                     </div>
                     <ol class="rank-list">
-                        <li v-for="(m, i) in ranking" :key="m.id">
+                        <li v-for="(m, i) in ranking" :key="m.id" :class="{ 'is-me': m.me }">
                             <span class="pos" :class="{ podium: i < 3 }">{{ i + 1 }}</span>
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate font-bold">{{ m.name }}</span>
@@ -991,15 +1059,17 @@ resetPuzzle();
                             </span>
                             <span class="w-20 text-right font-extrabold tabular-nums">{{ m.xp }} XP</span>
                         </li>
+                        <li v-if="!ranking.length" class="text-[var(--muted)]">No one here yet.</li>
                     </ol>
                     <p class="border-t border-[var(--line)] p-4 text-xs text-[var(--muted)]">
-                        Club XP comes from the register: {{ XP_RULES.P }} per session present, {{ XP_RULES.L }} if late, plus {{ XP_RULES.streak }} for each week in a row.
+                        Club XP = puzzle and lesson XP, plus attendance: {{ XP_RULES.P }} per session present, {{ XP_RULES.L }} if late, and
+                        {{ XP_RULES.streak }} for each week in a row.
                     </p>
                 </div>
 
                 <div class="flex flex-col gap-4">
                     <div class="panel flex flex-col gap-3 p-4">
-                        <h2 class="subheading">Your progress on this device</h2>
+                        <h2 class="subheading">{{ me ? `${me.name}'s puzzle & lesson XP` : 'Your progress on this device' }}</h2>
                         <div class="flex items-end justify-between">
                             <span class="stat-n">Level {{ level }}</span>
                             <span class="font-bold text-[var(--muted)]">{{ progress.xp }} XP</span>
@@ -1070,7 +1140,10 @@ resetPuzzle();
                         <div><div class="stat-n">{{ puzzle.theme }}</div><div class="stat-l">Motif</div></div>
                     </div>
                 </template>
-                <p class="chip mx-auto"><Sparkles :size="16" /> +{{ pz.result.xp }} XP</p>
+                <p class="chip mx-auto">
+                    <Sparkles :size="16" />
+                    {{ pz.result.xp ? `+${pz.result.xp} XP` : explorer ? 'Already solved: try a new one for XP!' : 'Already solved: no new XP' }}
+                </p>
                 <div class="flex flex-wrap justify-center gap-2">
                     <button type="button" class="btn-c" @click="(sfx.tap(), resetPuzzle())"><RotateCcw :size="18" /> Try again</button>
                     <button type="button" class="btn-c primary" @click="nextPuzzle">Next puzzle <ChevronRight :size="18" /></button>
@@ -1760,6 +1833,9 @@ resetPuzzle();
     gap: 12px;
     padding: 10px 16px;
     border-top: 1px solid var(--line);
+}
+.rank-list li.is-me {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .pos {
     display: grid;

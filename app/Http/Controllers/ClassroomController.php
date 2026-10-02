@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Classroom;
 use App\Models\Student;
+use App\Support\ClubCatalog;
 use App\Support\LevelCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -102,7 +104,10 @@ class ClassroomController extends Controller
     {
         $this->authorizeOwner($request, $classroom);
 
-        $data = $request->validate(['names' => ['required', 'string', 'max:3000']]);
+        $data = $request->validate([
+            'names' => ['required', 'string', 'max:3000'],
+            'grade' => ['nullable', Rule::in(ClubCatalog::GRADES)],
+        ]);
 
         $names = collect(preg_split('/\r\n|\r|\n|,/', $data['names']))
             ->map(fn ($n) => trim(preg_replace('/\s+/', ' ', $n)))
@@ -120,7 +125,12 @@ class ClassroomController extends Controller
             if (in_array(mb_strtolower($name), $existing, true)) {
                 continue;
             }
-            $classroom->students()->create(['name' => $name, 'avatar' => Student::randomAvatar(), 'pin' => Student::newPin()]);
+            $classroom->students()->create([
+                'name' => $name,
+                'avatar' => Student::randomAvatar(),
+                'pin' => Student::newPin(),
+                'grade' => $data['grade'] ?? null,
+            ]);
             $added++;
         }
 

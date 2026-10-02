@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ClassroomController;
+use App\Http\Controllers\ClubController;
 use App\Http\Controllers\JoinController;
 use App\Http\Controllers\PlayerController;
 use App\Http\Controllers\ProfileController;
@@ -15,7 +16,10 @@ Route::get('/', function () {
 })->name('home');
 
 // School chess club: puzzles, lessons, register and leaderboard by grade tier
-Route::get('/club', fn () => Inertia::render('Club'))->name('club');
+Route::get('/club', [ClubController::class, 'show'])->name('club');
+Route::post('/club/progress', [ClubController::class, 'progress'])
+    ->middleware(['auth:student', 'throttle:60,1'])
+    ->name('club.progress');
 
 // Students
 Route::get('/join', [JoinController::class, 'code'])->name('join');
@@ -53,6 +57,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/classrooms/{classroom}', [ClassroomController::class, 'destroy'])->name('classrooms.destroy');
     Route::get('/classrooms/{classroom}/cards', [ClassroomController::class, 'cards'])->name('classrooms.cards');
     Route::post('/classrooms/{classroom}/students', [ClassroomController::class, 'addStudents'])->name('classrooms.students.store');
+    Route::post('/club/students/{student}/attendance', [ClubController::class, 'mark'])->name('club.attendance');
+    Route::patch('/club/students/{student}', [ClubController::class, 'updateStudent'])->name('club.students.update');
 
     Route::scopeBindings()->group(function () {
         Route::post('/classrooms/{classroom}/students/{student}/pin', [ClassroomController::class, 'resetPin'])->name('classrooms.students.pin');
